@@ -1,0 +1,239 @@
+---
+title: "Regression of Credit"
+author: "171840094 Feichi Lu"
+date: "2020/3/29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Data and Plot to Overview
+```{r}
+library(ISLR)
+library(MASS)
+library(car)
+data(Credit)
+head(Credit)
+```
+
+Seperate training and test set.
+```{r}
+dim(Credit)
+train=Credit[1:250,]
+test=Credit[251:400,]
+dim(train)
+dim(test)
+```
+
+```{r}
+pairs(train[,c(2:12)])
+```
+
+## Fit All Possible Predictors
+```{r}
+lm.fit1=lm(Balance~.-ID,data=train)
+summary(lm.fit1)
+```
+Calculate the percentage error, i.e. RSE/mean of response.
+```{r}
+M=mean(train$Balance)
+RSE=sigma(lm.fit1)
+RSE/M
+```
+
+Calculate the confidence interval of all the coeffcients.
+```{r}
+confint(lm.fit1)
+```
+
+## Using forward, backward and mixed selection
+Keep the remaining predictors once all of them are significant.
+```{r}
+step(lm.fit1, direction="backward")
+step(lm(Balance~1,data=Credit),scope=formula(lm.fit1),direction="forward")
+step(lm.fit1,direction="both")
+```
+Both backward and mixed selection lead to the result of `Balance~ Income + Limit + Cards + Age + Student`. Forward method has `Rating` added. But due to collinearity, we exclude `Rating` from the model. Thus, we have `lm.fit3`.
+```{r}
+lm.fit2=lm(Balance~Income+Limit+Cards+Age+Student,data=train)
+summary(lm.fit2)
+```
+
+## Test collinearity and amend
+```{r}
+vif(lm.fit1)
+```
+
+Amend collinearity: 
+Keep Limit while delete Rating:
+```{r}
+lm.fit3=lm(Balance~.-ID-Rating,data=train)
+summary(lm.fit3)
+```
+
+```{r}
+vif(lm.fit3)
+```
+
+```{r}
+confint(lm.fit3)
+```
+
+## The association of each predictor on Balance(Simple Linear Regression)
+```{r}
+slm.fit1=lm(Balance~Income,data=train)
+slm.fit2=lm(Balance~Limit,data=train)
+slm.fit3=lm(Balance~Rating, data=train)
+slm.fit4=lm(Balance~Cards,data=train)
+slm.fit5=lm(Balance~Age, data=train)
+slm.fit6=lm(Balance~Education, data=train)
+slm.fit7=lm(Balance~Gender, data=train)
+slm.fit8=lm(Balance~Student, data=train)
+slm.fit9=lm(Balance~Married, data=train)
+slm.fit10=lm(Balance~Ethnicity, data=train)
+summary(slm.fit1)
+summary(slm.fit2)
+summary(slm.fit3)
+summary(slm.fit4)
+summary(slm.fit5)
+summary(slm.fit6)
+summary(slm.fit7)
+summary(slm.fit8)
+summary(slm.fit9)
+summary(slm.fit10)
+
+```
+
+## Predict the test Balance and assess the accuracy
+```{r}
+pred=predict(lm.fit1,data.frame(test),interval="prediction")
+head(pred)
+```
+
+RSS calculation for predictions of test:
+```{r}
+RSS.pred=function(test.predict){
+  RSS=sum((test.predict$Balance-test.predict$predict)^2)
+  return(RSS)
+}
+```
+
+Create a function: Predict the test set and let all the prediction >=0,then find the RSS:
+```{r}
+
+test.rss=function(lm.fit,test){
+#predict and change to dataframe  
+  lm.predict=predict(lm.fit,test)
+  test.predict=test
+#change <0 to 0
+  test.predict['predict']=lm.predict
+  for (i in rownames(test.predict)){
+    if(test.predict[i,'predict']<0){
+      test.predict[i,'predict']=0
+    }}
+#calculate RSS
+  rss=RSS.pred(test.predict)
+  print("RSS of the test set")
+  return(rss)
+}
+```
+
+Find the RSS for test using the model lm.fit:
+```{r}
+test.rss(lm.fit1,test)
+test.rss(lm.fit2,test)
+test.rss(lm.fit3,test)
+```
+
+## Nonlinearity of the data
+Residual plot
+```{r}
+par(mfrow=c(2,2))
+plot(lm.fit2)
+```
+```{r}
+lm.fit4=lm(Balance~Income+Limit+I(log(Limit))+Cards+Age+Student,data=train)
+summary(lm.fit4)
+test.rss(lm.fit4,test)
+anova(lm.fit2,lm.fit4)
+par(mfrow=c(2,2))
+plot(lm.fit4)
+```
+
+```{r}
+lm.fit5=lm(Balance~Income+I(log(Income))+Limit+I(log(Limit))+I(Limit^2)+Cards+Age+Student,data=train)
+summary(lm.fit5)
+test.rss(lm.fit5,test)
+anova(lm.fit4,lm.fit5)
+par(mfrow=c(2,2))
+plot(lm.fit5)
+```
+
+## Explore synergy effect
+```{r}
+lm.fit6=lm(Balance~Limit*Income+Student+Cards+Age,data=train)
+summary(lm.fit6)
+test.rss(lm.fit6,test)
+anova(lm.fit2,lm.fit6)
+par(mfrow=c(2,2))
+plot(lm.fit6)
+```
+
+```{r}
+lm.fit7=lm(Balance~Limit*Income+I(log(Limit))+Student+Cards+Age,data=train)
+summary(lm.fit7)
+test.rss(lm.fit7,test)
+anova(lm.fit6,lm.fit7)
+par(mfrow=c(2,2))
+plot(lm.fit7)
+```
+
+
+
+## Exclude outliers and leverages
+
+Delete high leverage points:
+```{r}
+plot(hatvalues(lm.fit7))
+which.max(hatvalues(lm.fit7))
+train_del=train[-c(29),]
+lm.fit8=lm(Balance~Limit*Income+I(log(Limit))++Student+Cards+Age,data=train_del)
+summary(lm.fit8)
+test.rss(lm.fit8,test)
+par(mfrow=c(2,2))
+plot(lm.fit8)
+```
+
+Delete outliers:
+```{r}
+outlierTest(lm.fit8)
+train_del=train[-c(29,249,243),]
+lm.fit9=lm(Balance~Income+I(log(Income))+Limit+I(log(Limit))+I(Limit^2)+Cards+Age+Student,data=train_del)
+summary(lm.fit9)
+test.rss(lm.fit9,test)
+par(mfrow=c(2,2))
+plot(lm.fit9)
+```
+
+```{r}
+plot(hatvalues(lm.fit5))
+which.max(hatvalues(lm.fit5))
+train_del=train[-c(29),]
+lm.fit10=lm(Balance~Income+I(log(Income))+Limit+I(Limit^2)+I(log(Limit))+Student+Cards+Age,data=train_del)
+summary(lm.fit10)
+test.rss(lm.fit10,test)
+par(mfrow=c(2,2))
+plot(lm.fit10)
+```
+
+```{r}
+outlierTest(lm.fit10)
+train_del=train[-c(29,249,243),]
+lm.fit11=lm(Balance~Income+I(log(Income))+Limit+I(Limit^2)+I(log(Limit))+Student+Cards+Age,data=train_del)
+summary(lm.fit11)
+test.rss(lm.fit11,test)
+par(mfrow=c(2,2))
+plot(lm.fit11)
+```
